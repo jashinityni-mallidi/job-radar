@@ -4,6 +4,11 @@ on:
   schedule:
     - cron: "7 * * * *"      # every hour, at 7 minutes past
   workflow_dispatch:          # lets you run it by hand from the Actions tab
+    inputs:
+      backfill:
+        description: "Load older jobs (tick this once to fill the 2 day / 7 day / 30 day filters)"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -36,6 +41,7 @@ jobs:
           ADZUNA_APP_ID: ${{ secrets.ADZUNA_APP_ID }}
           ADZUNA_APP_KEY: ${{ secrets.ADZUNA_APP_KEY }}
           JOB_LOCATION: ${{ vars.JOB_LOCATION }}
+          BACKFILL: ${{ inputs.backfill }}
         run: python fetch_jobs.py
 
       - name: Save jobs.json
