@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Hourly Data Analyst job fetcher.
 
-Pulls Data Analyst postings (full-time and contract, newest first, last 30 days)
+Pulls Analyst postings of every kind (data, business, financial and more; newest first, last 30 days)
 from the Adzuna API, merges them into jobs.json without duplicates, tags each
 one (industry, skills, F-1 signal, urgency), and writes a notification file when
 new postings appear.
@@ -11,6 +11,7 @@ import json
 import os
 import re
 import sys
+import time
 from collections import Counter
 from datetime import datetime, timedelta, timezone
 
@@ -23,8 +24,10 @@ LOCATION = (os.environ.get("JOB_LOCATION") or "").strip()  # empty = whole count
 
 MAX_DAYS = 30
 RESULTS_PER_PAGE = 50
-PAGES_FIRST_RUN = 4   # first run builds the 30-day history
-PAGES_REGULAR = 2     # hourly runs only need the newest postings
+# Adzuna's free keys allow roughly 1,000 calls a month, so hourly runs stay at 1-3 calls.
+PAGES_REGULAR = 3     # hourly: stops early as soon as a page reaches jobs we already have
+PAGES_BACKFILL = 30   # first run, or when you tick "backfill": reaches back about a week or more
+BACKFILL = os.environ.get("BACKFILL", "").strip().lower() == "true"
 DATA_FILE = "jobs.json"
 API = "https://api.adzuna.com/v1/api/jobs/{country}/search/{page}"
 
@@ -108,6 +111,33 @@ SKILLS = {
     "VBA / Macros": r"\bvba\b|macros?",
     "Git": r"\bgit\b|github",
     "HIPAA / Healthcare data": r"hipaa|claims\s+data|\behr\b|\bepic\b",
+    "Data Cleaning": r"data\s+(cleaning|cleansing|wrangling)",
+    "Power Query / DAX": r"\bdax\b|power\s+query",
+    "SSIS / SSRS": r"\bssis\b|\bssrs\b",
+    "Alteryx / Qlik": r"alteryx|\bqlik",
+    "Anaplan": r"anaplan",
+    "Financial Modeling": r"financial\s+model",
+    "Forecasting": r"forecast",
+    "Budgeting": r"budget",
+    "Variance Analysis": r"variance",
+    "Reconciliation": r"reconcil",
+    "GAAP": r"\bgaap\b",
+    "SOX / Internal Controls": r"\bsox\b|internal\s+controls?",
+    "Audit": r"\baudit",
+    "SAP / Oracle / ERP": r"\bsap\b|\boracle\b|\berp\b|workday",
+    "Requirements Gathering": r"requirements?\s+(gathering|analysis|elicitation)|business\s+requirements",
+    "User Stories / UAT": r"user\s+stor|\buat\b|acceptance\s+test",
+    "Process Mapping": r"process\s+(map|flow)|\bvisio\b",
+    "Process Improvement": r"process\s+improvement|\blean\b|six\s+sigma",
+    "Project Management": r"project\s+manage|\bpmp\b",
+    "CRM": r"\bcrm\b",
+    "Google Analytics / SEO": r"google\s+analytics|\bga4\b|\bseo\b",
+    "Market Research": r"market\s+research|survey",
+    "Risk Assessment": r"risk\s+(assessment|analysis|management)",
+    "Compliance": r"compliance|regulatory",
+    "Fraud / AML": r"\bfraud|\baml\b|\bkyc\b",
+    "Supply Chain": r"supply\s+chain|logistics",
+    "Inventory / Demand Planning": r"inventory|demand\s+planning",
 }
 
 
@@ -185,6 +215,112 @@ def sponsor_info(company, sponsors):
     return {"status": "none"}
 
 
+ROLE_RULES = [
+    ("Financial", r"financ|accounting|accountant|treasury|budget|fp&a|credit|investment|audit|\btax\b|actuar|revenue|payroll|pricing|\bloan|mortgage|underwrit"),
+    ("Risk / Compliance", r"\brisk|fraud|compliance|\baml\b|\bkyc\b|regulat|security|cyber|threat|investigat"),
+    ("Healthcare", r"health|clinical|medical|patient|pharma|claims|hospital|nurs|\behr\b|\bepic\b|biostat"),
+    ("Operations / Supply Chain", r"supply|logistics|procure|inventory|operations|planning|demand|sourcing|warehouse|transportation|production|manufactur"),
+    ("HR / People", r"\bhr\b|people|talent|recruit|workforce|compensation|benefits"),
+    ("Marketing / Research", r"market|research|\bseo\b|digital|customer|consumer|social|campaign|e-?commerce|policy|survey|insight"),
+    ("IT / Technical", r"\bit\b|network|software|application|infrastructure|\bqa\b|quality\s+assurance|\btest|devops|cloud|technical|platform|help\s?desk|\bsupport\b|engineer"),
+    ("Data / BI", r"\bdata\b|\bbi\b|business\s+intelligence|analytics|reporting|statistic|scientist|database|\bsql\b|tableau|power\s?bi"),
+    ("Business / Systems", r"business|system|process|requirements|product|program|project|strategy|management|salesforce|\bcrm\b|workday|functional"),
+]
+
+
+def detect_role(title):
+    for label, pattern in ROLE_RULES:
+        if re.search(pattern, title or "", re.I):
+            return label
+    return "Other"
+
+
+def detect_level(title, text):
+    t = (title or "").lower()
+    if re.search(r"\b(intern|internship|trainee|co-?op)\b", t):
+        return "Intern"
+    if re.search(r"\b(lead|principal|staff|manager|director|head|vp|svp)\b", t):
+        return "Lead / Manager"
+    if re.search(r"\b(sr\.?|senior)\b|\b(iii|iv|3|4)\s*$", t):
+        return "Senior"
+    if re.search(r"\b(jr\.?|junior|entry|associate)\b|\banalyst\s+(i|1)\b", t):
+        return "Entry"
+    if re.search(r"\banalyst\s+(ii|2)\b|\bmid[- ]level\b", t):
+        return "Mid"
+    if re.search(r"entry[- ]level|new\s+grad|recent\s+grad", text or "", re.I):
+        return "Entry"
+    return "Not stated"
+
+
+def find_experience(text):
+    """Years of experience stated in the posting excerpt. Returns (low, high) or (None, None)."""
+    for m in re.finditer(r"(?<![\d$.,])(\d{1,2})\s*(?:\+|plus)?\s*(?:(?:-|\u2013|to)\s*(\d{1,2}))?\s*\+?\s*years?", text or "", re.I):
+        ctx = text[max(0, m.start() - 60): m.end() + 80]
+        if not re.search(r"experience|\bexp\b|background|professional", ctx, re.I):
+            continue
+        lo = int(m.group(1))
+        hi = int(m.group(2)) if m.group(2) else None
+        if hi is not None and hi < lo:
+            lo, hi = hi, lo
+        if lo > 20:
+            continue
+        return lo, hi
+    if re.search(r"entry[- ]level|new\s+grad|recent\s+grad|fresher", text or "", re.I):
+        return 0, None
+    return None, None
+
+
+STATE_INFO = {
+    "CT": ("Connecticut", "Northeast"), "ME": ("Maine", "Northeast"), "MA": ("Massachusetts", "Northeast"),
+    "NH": ("New Hampshire", "Northeast"), "RI": ("Rhode Island", "Northeast"), "VT": ("Vermont", "Northeast"),
+    "NJ": ("New Jersey", "Northeast"), "NY": ("New York", "Northeast"), "PA": ("Pennsylvania", "Northeast"),
+    "IL": ("Illinois", "Midwest"), "IN": ("Indiana", "Midwest"), "MI": ("Michigan", "Midwest"),
+    "OH": ("Ohio", "Midwest"), "WI": ("Wisconsin", "Midwest"), "IA": ("Iowa", "Midwest"),
+    "KS": ("Kansas", "Midwest"), "MN": ("Minnesota", "Midwest"), "MO": ("Missouri", "Midwest"),
+    "NE": ("Nebraska", "Midwest"), "ND": ("North Dakota", "Midwest"), "SD": ("South Dakota", "Midwest"),
+    "DE": ("Delaware", "South"), "FL": ("Florida", "South"), "GA": ("Georgia", "South"),
+    "MD": ("Maryland", "South"), "NC": ("North Carolina", "South"), "SC": ("South Carolina", "South"),
+    "VA": ("Virginia", "South"), "DC": ("District of Columbia", "South"), "WV": ("West Virginia", "South"),
+    "AL": ("Alabama", "South"), "KY": ("Kentucky", "South"), "MS": ("Mississippi", "South"),
+    "TN": ("Tennessee", "South"), "AR": ("Arkansas", "South"), "LA": ("Louisiana", "South"),
+    "OK": ("Oklahoma", "South"), "TX": ("Texas", "South"),
+    "AZ": ("Arizona", "West"), "CO": ("Colorado", "West"), "ID": ("Idaho", "West"), "MT": ("Montana", "West"),
+    "NV": ("Nevada", "West"), "NM": ("New Mexico", "West"), "UT": ("Utah", "West"), "WY": ("Wyoming", "West"),
+    "AK": ("Alaska", "West"), "CA": ("California", "West"), "HI": ("Hawaii", "West"),
+    "OR": ("Oregon", "West"), "WA": ("Washington", "West"),
+}
+NAME_TO_ABBR = {v[0].lower(): k for k, v in STATE_INFO.items()}
+
+
+def derive_state(location, area):
+    """Prefer Adzuna's structured area; fall back to reading the location text."""
+    if area and len(area) > 1 and str(area[1]).lower() in NAME_TO_ABBR:
+        return NAME_TO_ABBR[str(area[1]).lower()]
+    loc = location or ""
+    if re.search(r"d\.?c\.?\b", loc, re.I) and "washington" in loc.lower():
+        return "DC"
+    m = re.search(r",\s*([A-Z]{2})\b", loc)
+    if m and m.group(1) in STATE_INFO:
+        return m.group(1)
+    for name in sorted(NAME_TO_ABBR, key=len, reverse=True):
+        if re.search(r"\b" + re.escape(name) + r"\b(?!\s+(county|parish|borough|township))", loc.lower()):
+            return NAME_TO_ABBR[name]
+    return ""
+
+
+def place_label(location, area, state):
+    city = str(area[-1]) if area and len(area) >= 4 else ""
+    if not city and location and "," in location:
+        first = location.split(",")[0].strip()
+        if first and first.lower() not in NAME_TO_ABBR and first.upper() != "US":
+            city = first
+    if state and city:
+        return f"{city}, {state}"
+    if state:
+        return STATE_INFO[state][0]
+    return location or ""
+
+
 def detect_industry(company, category):
     for label, pattern in INDUSTRY_RULES:
         if re.search(pattern, company or "", re.I):
@@ -198,11 +334,20 @@ def find_skills(text):
 
 
 def is_target(title):
-    return bool(re.search(r"data\s+analyst|analyst.{0,20}\bdata\b|\bdata\b.{0,20}analyst|data\s+analytics",
-                          title or "", re.I))
+    return bool(re.search(r"analyst|analytics", title or "", re.I))
 
 
-def build_job(r, kind):
+def detect_type(r, title):
+    contract_type = (r.get("contract_type") or "").lower()
+    contract_time = (r.get("contract_time") or "").lower()
+    if contract_type == "contract" or re.search(r"\bcontract(or)?\b", title, re.I):
+        return "contract"
+    if contract_time == "full_time" or contract_type == "permanent":
+        return "full_time"
+    return "unknown"
+
+
+def build_job(r):
     title = clean(r.get("title"))
     company = clean((r.get("company") or {}).get("display_name"))
     location = clean((r.get("location") or {}).get("display_name"))
@@ -215,10 +360,11 @@ def build_job(r, kind):
         "title": title,
         "company": company,
         "location": location,
+        "area": (r.get("location") or {}).get("area") or [],
         "created": r.get("created"),
         "first_seen": now().isoformat(timespec="seconds"),
         "url": r.get("redirect_url"),
-        "type": "contract" if (kind == "contract" or r.get("contract_type") == "contract") else "full_time",
+        "type": detect_type(r, title),
         "industry": detect_industry(company, category),
         "description": desc,
         "skills": find_skills(f"{title} {desc}"),
@@ -230,15 +376,14 @@ def build_job(r, kind):
     }
 
 
-def fetch_page(kind, page):
+def fetch_page(page):
     params = {
         "app_id": APP_ID, "app_key": APP_KEY,
         "results_per_page": RESULTS_PER_PAGE,
-        "what_phrase": "data analyst",
+        "title_only": "analyst",
         "max_days_old": MAX_DAYS,
         "sort_by": "date",
         "content-type": "application/json",
-        "full_time" if kind == "full_time" else "contract": 1,
     }
     if LOCATION:
         params["where"] = LOCATION
@@ -246,7 +391,7 @@ def fetch_page(kind, page):
     if resp.status_code in (401, 403):
         sys.exit("Adzuna rejected the keys. Re-check ADZUNA_APP_ID and ADZUNA_APP_KEY in GitHub secrets.")
     if resp.status_code != 200:
-        print(f"Adzuna returned {resp.status_code} for {kind} page {page}; skipping.")
+        print(f"Adzuna returned {resp.status_code} for page {page}; stopping.")
         return None
     return resp.json().get("results", [])
 
@@ -294,6 +439,20 @@ def sponsor_text(sp):
     return ""
 
 
+def enrich(j, sponsors):
+    """(Re)compute every derived field from the stored text so rule updates apply to old jobs too."""
+    text = f"{j['title']}. {j['description']}"
+    j["f1"], j["f1_evidence"] = classify_f1(text)
+    j["sponsor"] = sponsor_info(j["company"], sponsors)
+    j["skills"] = find_skills(text)
+    j["role"] = detect_role(j["title"])
+    j["level"] = detect_level(j["title"], j["description"])
+    j["exp_min"], j["exp_max"] = find_experience(j["description"])
+    j["state"] = derive_state(j.get("location"), j.get("area"))
+    j["region"] = STATE_INFO[j["state"]][1] if j["state"] else "Not listed"
+    j["place"] = place_label(j.get("location"), j.get("area"), j["state"])
+
+
 def write_notification(new_jobs, first_run):
     skipped = sum(1 for j in new_jobs if j["f1"] == "citizen_gc")
     new_jobs = sorted([j for j in new_jobs if j["f1"] != "citizen_gc"],
@@ -314,7 +473,7 @@ def write_notification(new_jobs, first_run):
         kind = "Contract" if j["type"] == "contract" else "Full-time"
         lines += [
             f"### {j['title']} at {j['company'] or 'Company not listed'}",
-            f"{j['location'] or 'Location not listed'}. {kind}. Posted {age_text(hours)}. {F1_TEXT[j['f1']]}. {sponsor_text(j['sponsor'])}",
+            f"{j['place'] or 'Location not listed'}. {kind}. {j['role']}. Level: {j['level']}. Posted {age_text(hours)}. {F1_TEXT[j['f1']]}. {sponsor_text(j['sponsor'])}",
             f"**When to apply:** {apply_advice(hours)}",
             f"[Open posting]({j['url']})",
             "",
@@ -340,52 +499,66 @@ def main():
         created = parse_ts(j.get("created"))
         if created and created >= cutoff:
             jobs.append(j)
-    seen_ids = {j["id"] for j in jobs}
+    by_id = {j["id"]: j for j in jobs}
+    seen_ids = set(by_id)
     seen_keys = {dedupe_key(j) for j in jobs}
     first_run = not jobs
-    pages = PAGES_FIRST_RUN if first_run else PAGES_REGULAR
+    backfill = first_run or BACKFILL
+    pages = PAGES_BACKFILL if backfill else PAGES_REGULAR
+    known_ids = set(seen_ids)
 
     new_jobs = []
-    for kind in ("full_time", "contract"):
-        for page in range(1, pages + 1):
-            results = fetch_page(kind, page)
-            if results is None:
-                break
-            for r in results:
-                job = build_job(r, kind)
-                if not job["url"] or not is_target(job["title"]):
-                    continue
-                created = parse_ts(job["created"])
-                if not created or created < cutoff:
-                    continue
-                if job["id"] in seen_ids:
-                    if kind == "contract":
-                        for old in jobs:
-                            if old["id"] == job["id"]:
-                                old["type"] = "contract"
-                    continue
-                if dedupe_key(job) in seen_keys:
-                    continue
-                seen_ids.add(job["id"])
-                seen_keys.add(dedupe_key(job))
-                jobs.append(job)
-                new_jobs.append(job)
-            if len(results) < RESULTS_PER_PAGE:
-                break
+    calls = 0
+    for page in range(1, pages + 1):
+        if page > 1:
+            time.sleep(3)  # stay under Adzuna's per-minute limit
+        results = fetch_page(page)
+        calls += 1
+        if results is None:
+            break
+        reached_known = False
+        for r in results:
+            job = build_job(r)
+            if job["id"] in known_ids:
+                reached_known = True
+            if not job["url"] or not is_target(job["title"]):
+                continue
+            created = parse_ts(job["created"])
+            if not created or created < cutoff:
+                continue
+            if job["id"] in by_id:  # already stored: just refresh its location details
+                by_id[job["id"]]["area"] = job["area"]
+                by_id[job["id"]]["location"] = job["location"]
+                continue
+            if dedupe_key(job) in seen_keys:
+                continue
+            seen_ids.add(job["id"])
+            by_id[job["id"]] = job
+            seen_keys.add(dedupe_key(job))
+            jobs.append(job)
+            new_jobs.append(job)
+        if len(results) < RESULTS_PER_PAGE:
+            break
+        if not backfill and reached_known:
+            break  # newest-first: once we hit a job we already have, everything after is old news
 
     sponsors = load_sponsors()
-    for j in jobs:  # re-run rules on every stored job so rule updates apply to old jobs too
-        j["f1"], j["f1_evidence"] = classify_f1(f"{j['title']}. {j['description']}")
-        j["sponsor"] = sponsor_info(j["company"], sponsors)
+    for j in jobs:
+        enrich(j, sponsors)
 
     jobs.sort(key=lambda j: j["created"] or "", reverse=True)
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump({"updated": now().isoformat(timespec="seconds"), "jobs": jobs},
                   f, ensure_ascii=False, separators=(",", ":"))
 
-    print(f"{len(new_jobs)} new, {len(jobs)} total stored.")
-    if new_jobs:
-        write_notification(new_jobs, first_run)
+    oldest = parse_ts(jobs[-1]["created"]) if jobs else None
+    span = f"{(now() - oldest).days} days" if oldest else "n/a"
+    print(f"{len(new_jobs)} new, {len(jobs)} total stored, oldest posting {span} old, {calls} Adzuna call(s).")
+    notify = new_jobs
+    if backfill and not first_run:  # old jobs found by a backfill should not flood your email
+        notify = [j for j in new_jobs if (parse_ts(j["created"]) or cutoff) > now() - timedelta(hours=24)]
+    if notify:
+        write_notification(notify, first_run)
 
 
 if __name__ == "__main__":

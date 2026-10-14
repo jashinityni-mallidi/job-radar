@@ -132,6 +132,19 @@ a{color:var(--cobalt)}
   .top{padding:14px 12px}.stats{margin-left:0}
 }
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+
+.pager{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:0 0 12px}
+.pager .info{margin-right:auto;color:var(--muted);font-size:14px}
+.pager button{border:1px solid var(--line);background:#fff;border-radius:8px;padding:6px 11px;font-weight:600}
+.pager button[aria-current=page]{background:var(--ink);color:#fff;border-color:var(--ink)}
+.pager button:disabled{opacity:.4;cursor:default}
+.links a{display:block;margin:0 0 6px;font-weight:600}
+.rail .note{margin:6px 0 0}
+.sub3{font:600 14px/1.2 var(--head);margin:14px 0 6px}
+details summary{cursor:pointer;margin-top:6px;font-weight:600}
+.tips ul{margin:6px 0 0;padding-left:18px}
+.tips .chips{margin-top:6px}
+.panel textarea[readonly]{background:#F6F8FA}
 </style>
 </head>
 <body>
@@ -163,11 +176,31 @@ a{color:var(--cobalt)}
       <button data-v="any" aria-pressed="true">Any</button><button data-v="full_time">Full-time</button>
       <button data-v="contract">Contract</button>
     </div>
+    <h2>Type of analyst</h2>
+    <select id="fRole" aria-label="Type of analyst"></select>
+    <h2>Experience asked for</h2>
+    <select id="fExp" aria-label="Maximum years of experience">
+      <option value="any">Any</option>
+      <option value="1">Up to 1 year</option>
+      <option value="2">Up to 2 years</option>
+      <option value="3">Up to 3 years</option>
+      <option value="5">Up to 5 years</option>
+      <option value="8" selected>Up to 8 years</option>
+    </select>
+    <p class="note">Read from the years the posting states. Jobs that state no number stay in the list.</p>
+    <h2>Region (USA)</h2>
+    <select id="fRegion" aria-label="Region">
+      <option value="any">All of the USA</option>
+      <option>Northeast</option><option>Midwest</option><option>South</option><option>West</option>
+      <option value="Not listed">Nationwide / not listed</option>
+    </select>
+    <h2>State</h2>
+    <select id="fState" aria-label="State"></select>
     <h2>F-1 students</h2>
     <div class="choices" id="fF1"></div>
+    <label class="check"><input type="checkbox" id="fCit" checked> Hide jobs that need a US citizen or green card</label>
     <h2>Employer H-1B history</h2>
     <div class="choices" id="fSp"></div>
-    <label class="check"><input type="checkbox" id="fCit" checked> Hide jobs that need a US citizen or green card</label>
     <h2>Industry</h2>
     <select id="fIndustry" aria-label="Industry"></select>
     <h2>Search</h2>
@@ -175,10 +208,21 @@ a{color:var(--cobalt)}
     <h2>Sort within each time group</h2>
     <select id="fSort" aria-label="Sort">
       <option value="new">Newest first</option>
+      <option value="exp">Least experience required first</option>
       <option value="hiring">Most actively hiring first</option>
       <option value="sponsor">Employers with H-1B filings first</option>
     </select>
+    <h2>Jobs per page</h2>
+    <select id="fPer" aria-label="Jobs per page">
+      <option value="25">25</option><option value="50" selected>50</option><option value="100">100</option>
+    </select>
     <label class="check"><input type="checkbox" id="fHide"> Hide jobs I marked applied</label>
+    <h2>Also search on</h2>
+    <div class="links">
+      <a id="lnLI" href="#" target="_blank" rel="noopener">LinkedIn, with these filters</a>
+      <a id="lnIN" href="#" target="_blank" rel="noopener">Indeed, with these filters</a>
+    </div>
+    <p class="note">These open their own sites. Neither offers a free feed and both forbid automated collection, so their listings can't be pulled into this page. Their job alerts by email work well alongside this.</p>
   </aside>
 
   <section aria-label="Job list">
@@ -191,41 +235,151 @@ a{color:var(--cobalt)}
 <main id="resumeView" class="resume" hidden>
   <section class="panel">
     <h2>Your resume</h2>
-    <p class="hint">Everything stays in your browser. Nothing is uploaded or saved.</p>
+    <p class="hint">Saved only in this browser so the job panel can compare it automatically. Nothing is uploaded.</p>
     <label for="rJob">Job to match against</label>
     <select id="rJob"></select>
-    <label for="rJD">Full job description (optional, makes the check more accurate)</label>
+    <label for="rJD">Full job description (optional, more accurate)</label>
     <textarea id="rJD" style="min-height:110px" placeholder="Paste the whole posting here. The list only carries a short excerpt."></textarea>
     <label for="rFile">Upload resume (PDF, DOCX or TXT)</label>
     <input type="file" id="rFile" accept=".pdf,.docx,.txt">
     <label for="rText">Or paste resume text</label>
     <textarea id="rText" placeholder="Paste your resume text here"></textarea>
-    <div class="actions"><button class="btn cobalt" id="rGo">Check my resume</button></div>
+    <div class="actions">
+      <button class="btn cobalt" id="rGo">Check my resume</button>
+      <button class="btn alt" id="rClear">Clear saved resume</button>
+    </div>
     <p class="note" id="rMsg" role="status"></p>
   </section>
   <section class="panel" id="rOut" aria-live="polite">
-    <h2>ATS score and fixes</h2>
+    <h2>Resume match check</h2>
     <p class="hint">Pick a job, add your resume, and press Check my resume.</p>
   </section>
 </main>
+
+<footer style="text-align:center;padding:20px;font-size:13px;color:var(--muted)">Jobs by <a href="https://www.adzuna.com" target="_blank" rel="noopener">Adzuna</a></footer>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script>
 const $=s=>document.querySelector(s);
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const store={get(k,d){try{const v=JSON.parse(localStorage.getItem(k));return v==null?d:v}catch(e){return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
+const store={get(k,d){try{const v=JSON.parse(localStorage.getItem(k));return v==null?d:v}catch(e){return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}},del(k){try{localStorage.removeItem(k)}catch(e){}}};
+
+const SK={
+ "SQL":/\bsql\b|t-sql|pl\/sql|mysql|postgres/i,
+ "Python":/\bpython\b|\bpandas\b/i,
+ "R":/\bR\b(?=[,\/ )])/,
+ "Excel":/\bexcel\b|spreadsheets?/i,
+ "Power BI":/power\s?bi/i,
+ "Tableau":/\btableau\b/i,
+ "Looker":/\blooker\b/i,
+ "Snowflake":/\bsnowflake\b/i,
+ "Redshift":/\bredshift\b/i,
+ "BigQuery":/\bbigquery\b/i,
+ "Databricks":/\bdatabricks\b|\bspark\b/i,
+ "AWS":/\baws\b|amazon\s+web\s+services/i,
+ "Azure":/\bazure\b/i,
+ "GCP":/\bgcp\b|google\s+cloud/i,
+ "SAS":/\bsas\b/i,
+ "dbt":/\bdbt\b/i,
+ "Airflow":/\bairflow\b/i,
+ "ETL":/\betl\b|\belt\b|data\s+pipelines?/i,
+ "Data Modeling":/data\s+model(l)?ing/i,
+ "Data Warehousing":/data\s+warehous/i,
+ "Data Visualization":/data\s+visuali[sz]ation|visuali[sz]ations?/i,
+ "Dashboards":/dashboards?/i,
+ "Reporting":/\breporting\b|\breports\b/i,
+ "Statistics":/statistic|regression|hypothesis/i,
+ "A/B Testing":/a\/b\s+test|experimentation/i,
+ "Machine Learning":/machine\s+learning|\bml\b/i,
+ "Data Quality":/data\s+quality|data\s+validation|data\s+integrity/i,
+ "Data Governance":/data\s+governance|metadata/i,
+ "KPIs":/\bkpis?\b|key\s+performance/i,
+ "Stakeholder Communication":/stakeholders?/i,
+ "Agile / Jira":/\bagile\b|\bscrum\b|\bjira\b/i,
+ "Salesforce":/salesforce/i,
+ "VBA / Macros":/\bvba\b|macros?/i,
+ "Git":/\bgit\b|github/i,
+ "HIPAA / Healthcare data":/hipaa|claims\s+data|\behr\b|\bepic\b/i,
+ "Data Cleaning":/data\s+(cleaning|cleansing|wrangling)/i,
+ "Power Query / DAX":/\bdax\b|power\s+query/i,
+ "SSIS / SSRS":/\bssis\b|\bssrs\b/i,
+ "Alteryx / Qlik":/alteryx|\bqlik/i,
+ "Anaplan":/anaplan/i,
+ "Financial Modeling":/financial\s+model/i,
+ "Forecasting":/forecast/i,
+ "Budgeting":/budget/i,
+ "Variance Analysis":/variance/i,
+ "Reconciliation":/reconcil/i,
+ "GAAP":/\bgaap\b/i,
+ "SOX / Internal Controls":/\bsox\b|internal\s+controls?/i,
+ "Audit":/\baudit/i,
+ "SAP / Oracle / ERP":/\bsap\b|\boracle\b|\berp\b|workday/i,
+ "Requirements Gathering":/requirements?\s+(gathering|analysis|elicitation)|business\s+requirements/i,
+ "User Stories / UAT":/user\s+stor|\buat\b|acceptance\s+test/i,
+ "Process Mapping":/process\s+(map|flow)|\bvisio\b/i,
+ "Process Improvement":/process\s+improvement|\blean\b|six\s+sigma/i,
+ "Project Management":/project\s+manage|\bpmp\b/i,
+ "CRM":/\bcrm\b/i,
+ "Google Analytics / SEO":/google\s+analytics|\bga4\b|\bseo\b/i,
+ "Market Research":/market\s+research|survey/i,
+ "Risk Assessment":/risk\s+(assessment|analysis|management)/i,
+ "Compliance":/compliance|regulatory/i,
+ "Fraud / AML":/\bfraud|\baml\b|\bkyc\b/i,
+ "Supply Chain":/supply\s+chain|logistics/i,
+ "Inventory / Demand Planning":/inventory|demand\s+planning/i
+};
+const STATE_NAMES={"CT": "Connecticut", "ME": "Maine", "MA": "Massachusetts", "NH": "New Hampshire", "RI": "Rhode Island", "VT": "Vermont", "NJ": "New Jersey", "NY": "New York", "PA": "Pennsylvania", "IL": "Illinois", "IN": "Indiana", "MI": "Michigan", "OH": "Ohio", "WI": "Wisconsin", "IA": "Iowa", "KS": "Kansas", "MN": "Minnesota", "MO": "Missouri", "NE": "Nebraska", "ND": "North Dakota", "SD": "South Dakota", "DE": "Delaware", "FL": "Florida", "GA": "Georgia", "MD": "Maryland", "NC": "North Carolina", "SC": "South Carolina", "VA": "Virginia", "DC": "District of Columbia", "WV": "West Virginia", "AL": "Alabama", "KY": "Kentucky", "MS": "Mississippi", "TN": "Tennessee", "AR": "Arkansas", "LA": "Louisiana", "OK": "Oklahoma", "TX": "Texas", "AZ": "Arizona", "CO": "Colorado", "ID": "Idaho", "MT": "Montana", "NV": "Nevada", "NM": "New Mexico", "UT": "Utah", "WY": "Wyoming", "AK": "Alaska", "CA": "California", "HI": "Hawaii", "OR": "Oregon", "WA": "Washington"};
+const BASE=["SQL", "Excel", "Python", "Data Visualization", "Dashboards", "Reporting", "Data Quality", "KPIs", "Stakeholder Communication", "ETL"];
+const ROLE_PACKS={"Financial": ["Financial Modeling", "Forecasting", "Budgeting", "Variance Analysis", "Reconciliation", "GAAP", "Excel", "SQL", "SAP / Oracle / ERP", "Reporting", "KPIs"], "Risk / Compliance": ["Risk Assessment", "Compliance", "Fraud / AML", "SQL", "Excel", "Reporting", "Audit", "Data Quality", "SOX / Internal Controls"], "Healthcare": ["HIPAA / Healthcare data", "SQL", "Excel", "Tableau", "Reporting", "Data Quality", "Statistics", "KPIs", "Python", "Stakeholder Communication"], "Operations / Supply Chain": ["Supply Chain", "Inventory / Demand Planning", "Forecasting", "Excel", "SQL", "Power BI", "KPIs", "SAP / Oracle / ERP", "Process Improvement", "Reporting"], "HR / People": ["Excel", "Reporting", "Dashboards", "SQL", "KPIs", "Stakeholder Communication", "Data Quality", "Power BI", "Tableau"], "Marketing / Research": ["Google Analytics / SEO", "Market Research", "A/B Testing", "Excel", "SQL", "Tableau", "Statistics", "Dashboards", "Stakeholder Communication", "CRM"], "IT / Technical": ["SQL", "Python", "Git", "Agile / Jira", "Azure", "AWS", "ETL", "Data Quality", "User Stories / UAT", "Reporting"], "Data / BI": ["SQL", "Python", "Excel", "Power BI", "Tableau", "Data Visualization", "Dashboards", "ETL", "Data Quality", "KPIs", "Stakeholder Communication", "Statistics"], "Business / Systems": ["Requirements Gathering", "User Stories / UAT", "Process Mapping", "SQL", "Excel", "Agile / Jira", "Stakeholder Communication", "Project Management", "Process Improvement", "Reporting"]};
+const SKILL_BULLETS={
+"SQL": "Wrote SQL queries to pull and transform [data] for [team or purpose], cutting [time or errors] by [X%].",
+"Python": "Automated [task] in Python (pandas), saving [N] hours per week.",
+"Excel": "Built Excel models and pivot reports for [purpose] that [who] used to [decision].",
+"Power BI": "Built Power BI dashboards tracking [KPIs] for [N] stakeholders, cutting reporting time by [X].",
+"Tableau": "Built Tableau dashboards tracking [KPIs] for [N] stakeholders, cutting reporting time by [X].",
+"Dashboards": "Built dashboards tracking [KPIs] used by [who] to [decision].",
+"Reporting": "Produced [weekly/monthly] reports on [metric] for [audience], replacing [manual process].",
+"ETL": "Built ETL steps moving [N rows or sources] into [system] with validation checks.",
+"Data Quality": "Added validation checks on [dataset] that caught [N] issues before release.",
+"Snowflake": "Migrated and validated [N] datasets in Snowflake, checking integrity against the source.",
+"Forecasting": "Built [monthly/quarterly] forecasts for [area], within [X%] of actuals.",
+"Budgeting": "Supported the [amount] budget for [area], tracking spend against plan.",
+"Variance Analysis": "Analyzed budget-to-actual variances for [area] and explained drivers to [who].",
+"Reconciliation": "Reconciled [accounts/systems] monthly, resolving [N] discrepancies.",
+"Financial Modeling": "Built a financial model for [purpose] used to evaluate [decision].",
+"Requirements Gathering": "Gathered requirements from [N] stakeholders and documented them for [project].",
+"User Stories / UAT": "Wrote user stories and ran UAT for [system], finding [N] defects before launch.",
+"Process Mapping": "Mapped the [process] end to end and removed [N] steps, saving [time].",
+"Process Improvement": "Improved [process], cutting cycle time by [X%].",
+"Stakeholder Communication": "Presented findings on [topic] to [audience] that led to [decision or action].",
+"Compliance": "Supported [regulation] compliance by [activity], with [result].",
+"Risk Assessment": "Assessed [type] risk for [area] and recommended [action].",
+"Fraud / AML": "Reviewed [N] alerts or cases for fraud/AML patterns, escalating [N] confirmed cases.",
+"Supply Chain": "Analyzed supply chain data for [area], improving [metric] by [X%].",
+"HIPAA / Healthcare data": "Analyzed [claims/clinical] data while following HIPAA rules, to [outcome].",
+"A/B Testing": "Ran [N] A/B tests on [feature], improving [metric] by [X%].",
+"Google Analytics / SEO": "Used Google Analytics to track [metric] and recommended changes that lifted [result].",
+"Statistics": "Applied [method, e.g. regression] to [data] to answer [question].",
+"AWS": "Worked with [AWS service] to [task] for [purpose].",
+"Azure": "Worked with [Azure service] to [task] for [purpose].",
+"KPIs": "Defined and tracked [N] KPIs for [area], reported to [audience].",
+"Data Visualization": "Designed visuals that explained [topic] to [audience], leading to [action]."
+};
+
 
 let DATA={jobs:[],updated:null};
-const F={posted:'30d',type:'any',f1:'any',sp:'any',hideCit:true,industry:'any',q:'',sort:'new',hide:false};
+const F={posted:'30d',type:'any',role:'any',exp:'8',region:'any',state:'any',f1:'any',sp:'any',hideCit:true,industry:'any',q:'',sort:'new',hide:false,page:1,per:50};
 let selected=null;
 let marks=store.get('ao_marks',{});
+let savedResume=store.get('ao_resume','');
 const lastVisit=store.get('ao_last',0);
 
 const F1={accepts:['F-1 welcome or sponsors','good'],caution:['Says no sponsorship','warn'],citizen_gc:['Citizen or green card only: skip','bad'],mixed:['Mixed F-1 signals','warn'],not_mentioned:['F-1 not mentioned','']};
 const spStatus=j=>j.sponsor?j.sponsor.status:'unknown';
 const BANDS=['Last 24 hours','1 to 2 days ago','3 to 7 days ago','8 to 30 days ago'];
 const LIMITS={'24h':24,'2d':48,'7d':168,'30d':720};
+const IMPLIED={'Intern':0,'Entry':1,'Mid':3,'Senior':5,'Lead / Manager':8};
 
 /* ---------- helpers ---------- */
 function band(h){return h<24?0:h<48?1:h<168?2:3}
@@ -240,6 +394,11 @@ function applyAdvice(h){
   if(h<168)return 'Apply within 2 days.';
   return 'Apply this week. It may already be filling.';
 }
+function expText(j){
+  if(j.exp_min==null)return null;
+  if(j.exp_min===0&&j.exp_max==null)return 'Entry level';
+  return j.exp_max!=null?`${j.exp_min}-${j.exp_max} years`:`${j.exp_min}+ years`;
+}
 function prep(){
   const now=Date.now(),counts={};
   DATA.jobs.forEach(j=>{const k=(j.company||'').toLowerCase().trim();if(k)counts[k]=(counts[k]||0)+1});
@@ -249,84 +408,161 @@ function prep(){
     j._open=n;
     j._level=(n>=3||j.urgent)?3:(n===2?2:1);
     j._score=j._level*10+(j.urgent?5:0)+Math.min(n,9);
+    j._exp=j.exp_min!=null?j.exp_min:(j.level&&IMPLIED[j.level]!=null?IMPLIED[j.level]:null);
+    j.role=j.role||'Other';j.level=j.level||'Not stated';j.region=j.region||'Not listed';j.state=j.state||'';
+    j.place=j.place||j.location||'';
   });
 }
 function filtered(skip){
+  skip=skip||[];
   const q=F.q.trim().toLowerCase();
   return DATA.jobs.filter(j=>{
     if(j._h>=LIMITS[F.posted])return false;
     if(F.type!=='any'&&j.type!==F.type)return false;
-    if(skip!=='f1'&&F.f1!=='any'&&j.f1!==F.f1)return false;
-    if(skip!=='sp'&&F.sp!=='any'&&spStatus(j)!==F.sp)return false;
-    if(skip!=='f1'&&F.hideCit&&j.f1==='citizen_gc'&&F.f1!=='citizen_gc')return false;
+    if(F.role!=='any'&&j.role!==F.role)return false;
+    if(!skip.includes('exp')&&F.exp!=='any'&&j._exp!=null&&j._exp>Number(F.exp))return false;
+    if(F.region!=='any'&&j.region!==F.region)return false;
+    if(F.state!=='any'&&j.state!==F.state)return false;
+    if(!skip.includes('f1')&&F.f1!=='any'&&j.f1!==F.f1)return false;
+    if(!skip.includes('cit')&&F.hideCit&&j.f1==='citizen_gc'&&F.f1!=='citizen_gc')return false;
+    if(!skip.includes('sp')&&F.sp!=='any'&&spStatus(j)!==F.sp)return false;
     if(F.industry!=='any'&&j.industry!==F.industry)return false;
     if(F.hide&&marks[j.id]==='applied')return false;
-    if(q&&!(`${j.title} ${j.company} ${j.location} ${(j.skills||[]).join(' ')}`.toLowerCase().includes(q)))return false;
+    if(q&&!(`${j.title} ${j.company} ${j.location} ${j.place} ${(j.skills||[]).join(' ')}`.toLowerCase().includes(q)))return false;
     return true;
   });
+}
+
+/* ---------- links to other sites ---------- */
+const ROLE_KW={'Financial':'financial analyst','Risk / Compliance':'risk analyst','Healthcare':'healthcare analyst','Operations / Supply Chain':'operations analyst','HR / People':'hr analyst','Marketing / Research':'marketing analyst','IT / Technical':'systems analyst','Data / BI':'data analyst','Business / Systems':'business analyst'};
+function searchLinks(kw,loc,posted,type,exp){
+  const t={'24h':['r86400',1],'2d':['r172800',3],'7d':['r604800',7],'30d':['r2592000',14]}[posted];
+  const li=new URLSearchParams({keywords:kw,location:loc||'United States',f_TPR:t[0]});
+  if(type==='full_time')li.set('f_JT','F');
+  if(type==='contract')li.set('f_JT','C');
+  const e={'1':'1,2','2':'2,3','3':'2,3','5':'2,3,4','8':'2,3,4'}[exp];
+  if(e)li.set('f_E',e);
+  const ind=new URLSearchParams({q:kw,fromage:String(t[1])});
+  if(loc)ind.set('l',loc);
+  if(type==='full_time')ind.set('jt','fulltime');
+  if(type==='contract')ind.set('jt','contract');
+  return {li:'https://www.linkedin.com/jobs/search/?'+li.toString(),ind:'https://www.indeed.com/jobs?'+ind.toString()};
+}
+function updateLinks(){
+  const loc=F.state!=='any'?(STATE_NAMES[F.state]||''):'';
+  const l=searchLinks(ROLE_KW[F.role]||'analyst',loc,F.posted,F.type,F.exp);
+  $('#lnLI').href=l.li;$('#lnIN').href=l.ind;
 }
 
 /* ---------- rendering ---------- */
 function badges(j){
   const b=[];
   if(lastVisit&&new Date(j.first_seen)>lastVisit)b.push('<span class="badge new">New since your last visit</span>');
-  b.push(`<span class="badge">${j.type==='contract'?'Contract':'Full-time'}</span>`);
+  if(j.type==='contract'||j.type==='full_time')b.push(`<span class="badge">${j.type==='contract'?'Contract':'Full-time'}</span>`);
+  if(j.level&&j.level!=='Not stated')b.push(`<span class="badge">${esc(j.level)}</span>`);
+  const et=expText(j);if(et)b.push(`<span class="badge">${esc(et)}</span>`);
   const f=F1[j.f1]||F1.not_mentioned;
   b.push(`<span class="badge ${f[1]}">${f[0]}</span>`);
-  if(j.sponsor&&j.sponsor.status==='filed')b.push(`<span class="badge good" title="Certified H-1B applications on record: ${j.sponsor.count} (${j.sponsor.analyst} with analyst titles)">H-1B filer</span>`);
+  if(j.sponsor&&j.sponsor.status==='filed')b.push(`<span class="badge good" title="Certified H-1B applications on record: ${j.sponsor.count}">H-1B filer</span>`);
   else if(j.sponsor&&j.sponsor.status==='none')b.push('<span class="badge" title="Not found in the Department of Labor file. This does not prove they never sponsor.">No H-1B record</span>');
-  if(j._level===3)b.push(`<span class="badge fire" title="${j.urgent?'Posting uses urgent hiring language':j._open+' open Data Analyst postings from this employer'}">Highly recruiting</span>`);
+  if(j._level===3)b.push(`<span class="badge fire" title="${j.urgent?'Posting uses urgent hiring language':j._open+' open analyst postings from this employer'}">Highly recruiting</span>`);
   else if(j._level===2)b.push('<span class="badge" title="2 open postings from this employer">2 openings</span>');
   if(marks[j.id]==='applied')b.push('<span class="badge good">Applied</span>');
   else if(marks[j.id]==='saved')b.push('<span class="badge warn">Saved</span>');
   return b.join('');
+}
+function pagerHtml(total,pages){
+  if(!total)return '';
+  const a=(F.page-1)*F.per+1,b=Math.min(total,F.page*F.per);
+  const nums=[];
+  for(let p=1;p<=pages;p++){if(p===1||p===pages||Math.abs(p-F.page)<=2)nums.push(p);else if(nums[nums.length-1]!=='...')nums.push('...')}
+  return `<div class="pager"><span class="info">Showing ${a} to ${b} of ${total} jobs</span>
+    <button class="pg" data-p="${F.page-1}" ${F.page<=1?'disabled':''}>Previous</button>
+    ${nums.map(n=>n==='...'?'<span class="info">...</span>':`<button class="pg" data-p="${n}" ${n===F.page?'aria-current="page"':''}>${n}</button>`).join('')}
+    <button class="pg" data-p="${F.page+1}" ${F.page>=pages?'disabled':''}>Next</button></div>`;
 }
 function render(){
   const list=filtered();
   list.sort((a,b)=>{
     const ba=band(a._h),bb=band(b._h);
     if(ba!==bb)return ba-bb;
+    if(F.sort==='exp'){const ea=a._exp==null?99:a._exp,eb=b._exp==null?99:b._exp;if(ea!==eb)return ea-eb}
     if(F.sort==='hiring'&&b._score!==a._score)return b._score-a._score;
     if(F.sort==='sponsor'){const sv=j=>j.sponsor&&j.sponsor.status==='filed'?1+j.sponsor.analyst*10+Math.min(j.sponsor.count,500):0;if(sv(b)!==sv(a))return sv(b)-sv(a)}
     return new Date(b.created)-new Date(a.created);
   });
 
-  // F-1 counts
-  const prevHide=F.hideCit;F.hideCit=false;
-  const base=filtered('f1'),cnt={any:base.length,accepts:0,caution:0,citizen_gc:0,mixed:0,not_mentioned:0};
+  // filter counts
+  const base=filtered(['f1','cit']),cnt={any:0,accepts:0,caution:0,citizen_gc:0,mixed:0,not_mentioned:0};
   base.forEach(j=>cnt[j.f1]=(cnt[j.f1]||0)+1);
-  const withCit=filtered().length;F.hideCit=prevHide;
-  const hiddenCit=prevHide&&F.f1!=='citizen_gc'?withCit-list.length:0;
-  cnt.any=prevHide?cnt.any-cnt.citizen_gc:cnt.any;
+  cnt.any=F.hideCit?base.length-cnt.citizen_gc:base.length;
   const opts=[['any','Any'],['accepts','Welcome or sponsors'],['not_mentioned','Not mentioned'],['caution','Says no sponsorship'],['mixed','Mixed signals'],['citizen_gc','Citizen or green card only']];
   $('#fF1').innerHTML=opts.map(o=>`<button class="choice" data-v="${o[0]}" aria-pressed="${F.f1===o[0]}">${o[1]}<small>${cnt[o[0]]||0}</small></button>`).join('');
   const hasSp=DATA.jobs.some(j=>spStatus(j)!=='unknown');
-  const sb=filtered('sp'),sc={any:sb.length,filed:0,none:0,unknown:0};
+  const sb=filtered(['sp']),sc={any:sb.length,filed:0,none:0,unknown:0};
   sb.forEach(j=>sc[spStatus(j)]=(sc[spStatus(j)]||0)+1);
   $('#fSp').innerHTML=hasSp?[['any','Any'],['filed','Has H-1B filings'],['none','No H-1B record found']].map(o=>`<button class="choice" data-v="${o[0]}" aria-pressed="${F.sp===o[0]}">${o[1]}<small>${sc[o[0]]||0}</small></button>`).join('')
-    :'<p class="note">Not loaded yet. Add the LCA_URL variable (see README step 7).</p>';
+    :'<p class="note">Not loaded. This part is optional.</p>';
+  const hiddenCit=F.hideCit&&F.f1!=='citizen_gc'?filtered(['cit']).length-list.length:0;
+  const hiddenExp=F.exp!=='any'?filtered(['exp']).length-list.length:0;
 
-  const out=[];let last=-1;
-  if(hiddenCit>0)out.push(`<div class="note" style="margin:0 0 12px">${hiddenCit} job${hiddenCit===1?'':'s'} hidden because they need a US citizen or green card. Untick the box on the left to see them.</div>`);
-  list.forEach(j=>{
+  const total=list.length,pages=Math.max(1,Math.ceil(total/F.per));
+  if(F.page>pages)F.page=pages;
+  const start=(F.page-1)*F.per,slice=list.slice(start,start+F.per);
+  const out=[];
+  if(hiddenCit>0)out.push(`<div class="note" style="margin:0 0 8px">${hiddenCit} job${hiddenCit===1?'':'s'} hidden because they need a US citizen or green card. Untick the box on the left to see them.</div>`);
+  if(hiddenExp>0)out.push(`<div class="note" style="margin:0 0 8px">${hiddenExp} job${hiddenExp===1?'':'s'} hidden because they ask for more than ${F.exp} years. Change "Experience asked for" to see them.</div>`);
+  out.push(pagerHtml(total,pages));
+  let last=-1;
+  slice.forEach((j,i)=>{
     const b=band(j._h);
     if(b!==last){
       last=b;const n=list.filter(x=>band(x._h)===b).length;
-      out.push(`<div class="bandhead b${b}"><h3>${BANDS[b]}</h3><span>${n} job${n===1?'':'s'}</span></div>`);
+      const cont=i===0&&start>0&&band(list[start-1]._h)===b;
+      out.push(`<div class="bandhead b${b}"><h3>${BANDS[b]}${cont?' (continued)':''}</h3><span>${n} job${n===1?'':'s'}</span></div>`);
     }
     out.push(`<button class="job b${b}" data-id="${esc(j.id)}" aria-current="${selected&&selected.id===j.id}">
       <span class="posted">${ago(j._h)}</span>
       <span class="t">${esc(j.title)}</span><br>
-      <span class="c">${esc(j.company||'Company not listed')}, ${esc(j.location||'location not listed')}</span>
+      <span class="c">${esc(j.company||'Company not listed')}, ${esc(j.place||'location not listed')}</span>
       <div class="badges">${badges(j)}</div></button>`);
   });
-  if(!list.length){
+  if(!total){
     out.push(DATA.jobs.length
-      ?'<div class="empty"><b>No jobs match these filters.</b><br>Try 1 month, or set F-1 students to Any.</div>'
+      ?'<div class="empty"><b>No jobs match these filters.</b><br>Try 1 month, All of the USA, or set Experience asked for to Any.</div>'
       :'<div class="empty"><b>No jobs stored yet.</b><br>In GitHub, open the Actions tab, choose Fetch jobs hourly, and press Run workflow. Then refresh this page.</div>');
-  }
+  }else out.push(pagerHtml(total,pages));
   $('#list').innerHTML=out.join('');
-  if(selected)renderDetail(selected,false);else $('#detail').innerHTML='<p class="note">Select a job to see when to apply, F-1 details, the skills it asks for, and contact options.</p>';
+  updateLinks();
+  if(selected)renderDetail(selected,false);else $('#detail').innerHTML='<p class="note">Select a job to see when to apply, F-1 details, the key points to add to your resume, and contact options.</p>';
+}
+
+/* ---------- key points for a job ---------- */
+function keyPoints(j){
+  const post=(j.skills||[]).slice();
+  const pack=(ROLE_PACKS[j.role]||BASE).filter(s=>!post.includes(s)).slice(0,6);
+  const lead=post.concat(pack).slice(0,4);
+  const bullets=lead.map(s=>SKILL_BULLETS[s]||`Used ${s} to [task] for [team or purpose], resulting in [measurable result].`);
+  const items=[];
+  items.push(post.length
+    ?`<li><b>Put these in your Skills section</b> (the posting names them): <div class="chips">${post.map(s=>`<span class="chip">${esc(s)}</span>`).join('')}</div></li>`
+    :'<li>The short excerpt we received names no tools. Open the full posting and copy its required skills.</li>');
+  if(pack.length)items.push(`<li><b>Also common for ${esc(j.role)} roles</b> (add only if you have used them): <div class="chips">${pack.map(s=>`<span class="chip">${esc(s)}</span>`).join('')}</div></li>`);
+  items.push(`<li>Use the title <b>${esc(j.title)}</b> in your resume headline or summary line, as long as it is honest for your background.</li>`);
+  const et=expText(j);
+  if(et&&j.exp_min>0)items.push(`<li>The posting asks for <b>${esc(et)}</b>. Say your total years of experience in the first line, and put your most relevant roles first.</li>`);
+  else if(j.level&&j.level!=='Not stated')items.push(`<li>The title suggests a <b>${esc(j.level)}</b> role. Match your summary to that level.</li>`);
+  items.push(`<li><b>Bullet ideas.</b> Fill in only what is true, with your real numbers:<ul>${bullets.map(b=>`<li>${esc(b)}</li>`).join('')}</ul></li>`);
+  items.push(`<li><b>Summary line to adapt:</b> ${esc(j.title)} with [N] years of experience in ${esc(lead.slice(0,3).join(', ')||'analysis and reporting')}, [one result with a number].</li>`);
+  return `<ul class="tips">${items.join('')}</ul>`;
+}
+function resumeVsJob(j){
+  if(!savedResume||savedResume.trim().length<150)
+    return '<p class="note">Add your resume on the Resume check tab and this panel will compare it with every job you click.</p>';
+  const r=checkResume(savedResume,j.description||'',j.title,j.role);
+  const col=r.score>=80?'good':r.score>=60?'warn':'bad';
+  return `<div class="callout"><b>Match estimate: <span class="badge ${col}">${r.score} / 100</span></b>
+    ${r.miss.length?`<small>Not found in your resume: ${esc(r.miss.slice(0,8).join(', '))}. Add them only if you have really used them.</small>`:'<small>Your resume covers every target keyword.</small>'}</div>`;
 }
 function renderDetail(j,open){
   selected=j;
@@ -337,25 +573,29 @@ function renderDetail(j,open){
     mixed:'The posting has both welcoming and restricting language. Read it closely.',
     not_mentioned:'No work-authorization information in the text we received. Check the full posting or ask the recruiter.'}[f];
   const sp=j.sponsor||{status:'unknown'};
-  const spmsg=sp.status==='filed'?`<b>Has H-1B filings on record.</b> ${sp.count} certified applications in the latest Department of Labor file, ${sp.analyst} with analyst job titles. Employers that have sponsored before are more likely to do it again, but a filing is not a guarantee.`
-    :sp.status==='none'?'<b>No H-1B record found</b> under this company name in the Department of Labor file. They may never have sponsored, or they may file under a different legal name.'
-    :'Employer H-1B history is not loaded yet.';
-  const skills=(j.skills||[]);
-  const q=encodeURIComponent((j.company||'')+' recruiter data analyst');
+  const spmsg=sp.status==='filed'?`<b>Has H-1B filings on record.</b> ${sp.count} certified applications in the latest Department of Labor file, ${sp.analyst} with analyst job titles. A filing is not a guarantee.`
+    :sp.status==='none'?'<b>No H-1B record found</b> under this company name in the Department of Labor file. They may never have sponsored, or file under a different legal name.'
+    :'Employer H-1B history is not loaded.';
+  const q=encodeURIComponent((j.company||'')+' recruiter analyst');
   const g=encodeURIComponent((j.company||'')+' careers');
   const contact=j.email
     ?`<p>Email found in the posting: <a href="mailto:${esc(j.email)}">${esc(j.email)}</a></p>`
     :'<p>No recruiter or hiring manager is named in this posting.</p>';
-  const why=j.urgent?'The posting uses urgent hiring language.':(j._open>1?`${j._open} open Data Analyst postings from this employer.`:'One open Data Analyst posting from this employer.');
+  const why=j.urgent?'The posting uses urgent hiring language.':(j._open>1?`${j._open} open analyst postings from this employer.`:'One open analyst posting from this employer.');
   const ms=marks[j.id];
+  const ext=searchLinks(`${j.title} ${j.company||''}`.trim(),j.place&&j.state?STATE_NAMES[j.state]:'','30d','any','any');
+  const et=expText(j);
   $('#detail').innerHTML=`
     <button class="close" id="dClose">Close</button>
     <h2>${esc(j.title)}</h2>
     <p class="co">${esc(j.company||'Company not listed')}</p>
     <dl class="facts">
       <dt>Posted</dt><dd>${ago(j._h)} (${new Date(j.created).toLocaleString([], {dateStyle:'medium',timeStyle:'short'})})</dd>
-      <dt>Location</dt><dd>${esc(j.location||'Not listed')}</dd>
-      <dt>Type</dt><dd>${j.type==='contract'?'Contract':'Full-time'}</dd>
+      <dt>Location</dt><dd>${esc(j.place||'Not listed')}${j.state?', '+esc(j.region):''}</dd>
+      <dt>Type</dt><dd>${j.type==='contract'?'Contract':j.type==='full_time'?'Full-time':'Not listed in the posting'}</dd>
+      <dt>Kind of analyst</dt><dd>${esc(j.role)}</dd>
+      <dt>Level</dt><dd>${esc(j.level)}</dd>
+      <dt>Experience</dt><dd>${et?esc(et):'No years stated in the excerpt'}</dd>
       <dt>Industry</dt><dd>${esc(j.industry||'Not listed')}</dd>
       <dt>Hiring activity</dt><dd>${j._level===3?'High. ':j._level===2?'Moderate. ':'Standard. '}${why}</dd>
     </dl>
@@ -367,18 +607,15 @@ function renderDetail(j,open){
       <small>Based on the text we receive, which can be a short excerpt.</small></div>
     <h3>Employer sponsorship history</h3>
     <div class="callout ${sp.status==='filed'?'f1good':'f1none'}">${spmsg}</div>
-    <h3>Skills this posting asks for</h3>
-    ${skills.length?`<div class="chips">${skills.map(s=>`<span class="chip">${esc(s)}</span>`).join('')}</div>`
-      :'<p class="note">No tools or skills were named in the excerpt. Open the full posting.</p>'}
-    <h3>Resume points for this role</h3>
-    <ul class="tips">
-      <li>Use the title "${esc(j.title)}" in your resume headline.</li>
-      ${skills.length?`<li>Show ${esc(skills.slice(0,4).join(', '))} in your Skills section and inside at least one achievement bullet each, if you have used them.</li>`:''}
-      <li>Add numbers to your bullets: rows processed, time saved, accuracy gained, reports delivered.</li>
-    </ul>
+    <h3>Key points to add to your resume</h3>
+    ${keyPoints(j)}
+    <h3>Your resume vs this job</h3>
+    ${resumeVsJob(j)}
     <h3>Hiring contact</h3>
     ${contact}
     <p><a href="https://www.linkedin.com/search/results/people/?keywords=${q}" target="_blank" rel="noopener">Find recruiters at this company on LinkedIn</a><br>
+    <a href="${esc(ext.li)}" target="_blank" rel="noopener">Look for this job on LinkedIn</a><br>
+    <a href="${esc(ext.ind)}" target="_blank" rel="noopener">Look for this job on Indeed</a><br>
     <a href="https://www.google.com/search?q=${g}" target="_blank" rel="noopener">Company careers page search</a></p>
     <h3>Posting excerpt</h3>
     <div class="desc">${esc(j.description||'No excerpt available.')}</div>
@@ -396,24 +633,29 @@ function renderDetail(j,open){
 function setGroup(sel,key){
   $(sel).addEventListener('click',e=>{
     const b=e.target.closest('button');if(!b)return;
-    F[key]=b.dataset.v;
-    if(sel!=='#fF1')$(sel).querySelectorAll('button').forEach(x=>x.setAttribute('aria-pressed',x===b));
+    F[key]=b.dataset.v;F.page=1;
+    if(sel!=='#fF1'&&sel!=='#fSp')$(sel).querySelectorAll('button').forEach(x=>x.setAttribute('aria-pressed',x===b));
     render();
   });
 }
 setGroup('#fPosted','posted');setGroup('#fType','type');setGroup('#fF1','f1');setGroup('#fSp','sp');
-$('#fCit').addEventListener('change',e=>{F.hideCit=e.target.checked;render()});
-$('#fIndustry').addEventListener('change',e=>{F.industry=e.target.value;render()});
-$('#fSort').addEventListener('change',e=>{F.sort=e.target.value;render()});
-$('#fQ').addEventListener('input',e=>{F.q=e.target.value;render()});
-$('#fHide').addEventListener('change',e=>{F.hide=e.target.checked;render()});
+function onSelect(sel,key,after){$(sel).addEventListener('change',e=>{F[key]=e.target.value;F.page=1;if(after)after();render()})}
+onSelect('#fRole','role');onSelect('#fExp','exp');onSelect('#fIndustry','industry');onSelect('#fSort','sort');
+onSelect('#fRegion','region',()=>{F.state='any';buildStates()});
+onSelect('#fState','state');
+$('#fPer').addEventListener('change',e=>{F.per=Number(e.target.value);F.page=1;render()});
+$('#fCit').addEventListener('change',e=>{F.hideCit=e.target.checked;F.page=1;render()});
+$('#fQ').addEventListener('input',e=>{F.q=e.target.value;F.page=1;render()});
+$('#fHide').addEventListener('change',e=>{F.hide=e.target.checked;F.page=1;render()});
 $('#list').addEventListener('click',e=>{
+  const pg=e.target.closest('.pg');
+  if(pg&&!pg.disabled){F.page=Number(pg.dataset.p);render();window.scrollTo({top:0});return}
   const b=e.target.closest('.job');if(!b)return;
   const j=DATA.jobs.find(x=>x.id===b.dataset.id);if(j)renderDetail(j,true);
 });
 $('#detail').addEventListener('click',e=>{
   if(e.target.id==='dClose'){document.body.classList.remove('show-detail');return}
-  if(e.target.id==='dResume'){showTab('resume');$('#rJob').value=selected.id;return}
+  if(e.target.id==='dResume'){showTab('resume');ensureJobOption(selected);$('#rJob').value=selected.id;return}
   const m=e.target.dataset.mark;
   if(m&&selected){
     if(marks[selected.id]===m)delete marks[selected.id];else marks[selected.id]=m;
@@ -427,6 +669,25 @@ function showTab(t){
   document.body.classList.remove('show-detail');
 }
 $('#tabJobs').onclick=()=>showTab('jobs');$('#tabResume').onclick=()=>showTab('resume');
+
+/* ---------- select options ---------- */
+function buildStates(){
+  const pool=DATA.jobs.filter(j=>j.state&&(F.region==='any'||j.region===F.region));
+  const ab=[...new Set(pool.map(j=>j.state))].sort((a,b)=>(STATE_NAMES[a]||a).localeCompare(STATE_NAMES[b]||b));
+  $('#fState').innerHTML='<option value="any">All states</option>'+ab.map(s=>`<option value="${s}">${esc(STATE_NAMES[s]||s)}</option>`).join('');
+  $('#fState').value=F.state;
+}
+function buildSelects(){
+  const roles={};DATA.jobs.forEach(j=>roles[j.role]=(roles[j.role]||0)+1);
+  $('#fRole').innerHTML='<option value="any">All kinds of analyst</option>'+Object.keys(roles).sort((a,b)=>roles[b]-roles[a]).map(r=>`<option value="${esc(r)}">${esc(r)} (${roles[r]})</option>`).join('');
+  const inds=[...new Set(DATA.jobs.map(j=>j.industry).filter(Boolean))].sort();
+  $('#fIndustry').innerHTML='<option value="any">All industries</option>'+inds.map(i=>`<option>${esc(i)}</option>`).join('');
+  buildStates();
+}
+function ensureJobOption(j){
+  if(j&&![...$('#rJob').options].some(o=>o.value===j.id))
+    $('#rJob').insertAdjacentHTML('beforeend',`<option value="${esc(j.id)}">${esc(j.title)} at ${esc(j.company||'unknown')}</option>`);
+}
 
 /* ---------- load ---------- */
 async function load(){
@@ -448,51 +709,35 @@ async function load(){
   $('#stNew').textContent=DATA.jobs.filter(j=>j._h<24).length;
   $('#stAll').textContent=DATA.jobs.length;
   $('#stF1').textContent=DATA.jobs.filter(j=>j.f1==='accepts').length;
-  const inds=[...new Set(DATA.jobs.map(j=>j.industry).filter(Boolean))].sort();
-  $('#fIndustry').innerHTML='<option value="any">All industries</option>'+inds.map(i=>`<option>${esc(i)}</option>`).join('');
-  const sorted=[...DATA.jobs].sort((a,b)=>new Date(b.created)-new Date(a.created));
+  buildSelects();
+  const sorted=[...DATA.jobs].sort((a,b)=>new Date(b.created)-new Date(a.created)).slice(0,400);
   $('#rJob').innerHTML='<option value="">No job selected (use the pasted description)</option>'+sorted.map(j=>`<option value="${esc(j.id)}">${esc(j.title)} at ${esc(j.company||'unknown')}</option>`).join('');
+  if(savedResume)$('#rText').value=savedResume;
   render();
   store.set('ao_last',Date.now());
 }
 load();
 
 /* =================== resume checker =================== */
-const SK={
- 'SQL':/\bsql\b|t-sql|pl\/sql|mysql|postgres/i,'Python':/\bpython\b|\bpandas\b/i,'R':/\bR\b(?=[,\/ )])/,
- 'Excel':/\bexcel\b|spreadsheets?/i,'Power BI':/power\s?bi/i,'Tableau':/\btableau\b/i,'Looker':/\blooker\b/i,
- 'Snowflake':/\bsnowflake\b/i,'Redshift':/\bredshift\b/i,'BigQuery':/\bbigquery\b/i,'Databricks':/\bdatabricks\b|\bspark\b/i,
- 'AWS':/\baws\b|amazon web services/i,'Azure':/\bazure\b/i,'GCP':/\bgcp\b|google cloud/i,'SAS':/\bsas\b/i,'dbt':/\bdbt\b/i,
- 'Airflow':/\bairflow\b/i,'ETL':/\betl\b|\belt\b|data pipelines?/i,'Data Modeling':/data model(l)?ing/i,
- 'Data Warehousing':/data warehous/i,'Data Visualization':/data visuali[sz]ation|visuali[sz]ations?/i,'Dashboards':/dashboards?/i,
- 'Reporting':/\breporting\b|\breports\b/i,'Statistics':/statistic|regression|hypothesis/i,'A/B Testing':/a\/b test|experimentation/i,
- 'Machine Learning':/machine learning|\bml\b/i,'Data Quality':/data quality|data validation|data integrity/i,
- 'Data Governance':/data governance|metadata/i,'KPIs':/\bkpis?\b|key performance/i,'Stakeholder Communication':/stakeholders?/i,
- 'Agile / Jira':/\bagile\b|\bscrum\b|\bjira\b/i,'Salesforce':/salesforce/i,'VBA / Macros':/\bvba\b|macros?/i,'Git':/\bgit\b|github/i,
- 'HIPAA / Healthcare data':/hipaa|claims data|\behr\b|\bepic\b/i
-};
-const BASE=['SQL','Excel','Python','Data Visualization','Dashboards','Reporting','Data Quality','KPIs','Stakeholder Communication','ETL'];
 const VERBS=new Set('built developed led automated analyzed analysed reduced improved designed created implemented migrated delivered optimized optimised managed streamlined validated increased partnered presented configured engineered tracked monitored documented collaborated identified cleaned transformed established resolved drove generated produced forecasted modeled modelled compiled consolidated launched maintained mapped extracted evaluated supported coordinated executed performed tested reconciled'.split(' '));
 const STOP=new Set('this that with from have will your their about which they them than then also such into over other more most some what when where while must able work working team role job position candidate candidates company experience years year including include required requirements preferred ability skills strong knowledge related using used within across well been being were these those only each both make good great join'.split(' '));
 
 function skillsIn(text){return Object.keys(SK).filter(k=>SK[k].test(text))}
-function checkResume(resume,jd,title){
+function checkResume(resume,jd,title,role){
   const words=resume.trim().split(/\s+/).filter(Boolean).length;
   const jobSkills=skillsIn(`${title} ${jd}`);
   let need=[...jobSkills];
-  if(need.length<6)BASE.forEach(s=>{if(!need.includes(s)&&need.length<10)need.push(s)});
+  if(need.length<8)(ROLE_PACKS[role]||BASE).forEach(s=>{if(!need.includes(s)&&need.length<10)need.push(s)});
   need=need.slice(0,18);
   const have=need.filter(s=>SK[s].test(resume)),miss=need.filter(s=>!have.includes(s));
   const kw=need.length?have.length/need.length:0;
 
-  // other frequent terms from a pasted/long description
   let extra=[];
   if(jd.length>500){
     const c={};(jd.toLowerCase().match(/[a-z][a-z+#-]{3,}/g)||[]).forEach(w=>{if(!STOP.has(w))c[w]=(c[w]||0)+1});
     const rl=resume.toLowerCase();
     extra=Object.entries(c).filter(e=>e[1]>=3).sort((a,b)=>b[1]-a[1]).slice(0,25).map(e=>e[0]).filter(w=>!rl.includes(w)).slice(0,8);
   }
-
   const sections={
     'Contact details':/[\w.+-]+@[\w-]+\.[\w.-]+/.test(resume)&&/\+?\d[\d\s().-]{8,}/.test(resume),
     'Summary':/\b(summary|profile|objective)\b/i.test(resume),
@@ -500,52 +745,94 @@ function checkResume(resume,jd,title){
     'Education':/\b(education|university|bachelor|master|b\.?s\.?|m\.?s\.?)\b/i.test(resume),
     'Skills':/\b(skills|technologies|tools)\b/i.test(resume)
   };
-  const secHit=Object.values(sections).filter(Boolean).length,sec=secHit/5;
-
+  const sec=Object.values(sections).filter(Boolean).length/5;
   const lines=resume.split(/\n+/).map(l=>l.replace(/^[\s•\-–*▪●◦]+/,'').trim()).filter(l=>l.length>25&&l.length<350);
-  const metrics=lines.filter(l=>/\d+\s?%|\$\s?\d|\b\d{2,}[kKmM+]?\b|\b\d+x\b/.test(l)).length;
+  const hasNum=l=>/\d+\s?%|\$\s?\d|\b\d{2,}[kKmM+]?\b|\b\d+x\b/.test(l);
+  const metrics=lines.filter(hasNum).length;
   const imp=Math.min(1,metrics/6);
-  const verbHits=lines.filter(l=>VERBS.has((l.split(/\s+/)[0]||'').toLowerCase().replace(/[^a-z]/g,''))).length;
+  const startsVerb=l=>VERBS.has((l.split(/\s+/)[0]||'').toLowerCase().replace(/[^a-z]/g,''));
+  const verbHits=lines.filter(startsVerb).length;
   const verbs=lines.length?Math.min(1,(verbHits/lines.length)/0.6):0;
-
-  const tt=(title||'data analyst').toLowerCase().split(/[^a-z]+/).filter(w=>w.length>2&&!['senior','junior','sr','jr','the','and','for','lead','remote','hybrid'].includes(w));
+  const weak=lines.filter(l=>!hasNum(l)||!startsVerb(l)).slice(0,3);
+  const tt=(title||'analyst').toLowerCase().split(/[^a-z]+/).filter(w=>w.length>2&&!['senior','junior','sr','jr','the','and','for','lead','remote','hybrid'].includes(w));
   const rl=resume.toLowerCase();
   const tmatch=tt.length?tt.filter(w=>rl.includes(w)).length/tt.length:0;
-
   const score=Math.round(50*kw+15*sec+15*imp+10*verbs+10*tmatch);
-  return {score,kw,sec,imp,verbs,tmatch,have,miss,extra,sections,metrics,lines:lines.length,verbHits,words,need};
+  return {score,kw,sec,imp,verbs,tmatch,have,miss,extra,sections,metrics,lines:lines.length,verbHits,words,need,weak};
 }
 function ringSvg(score){
   const r=42,c=2*Math.PI*r,col=score>=80?'#14764A':score>=60?'#C48A00':'#A8231B';
   return `<svg width="104" height="104" viewBox="0 0 104 104" role="img" aria-label="Score ${score} out of 100"><circle cx="52" cy="52" r="${r}" fill="none" stroke="#E4EAF0" stroke-width="10"/><circle cx="52" cy="52" r="${r}" fill="none" stroke="${col}" stroke-width="10" stroke-linecap="round" stroke-dasharray="${c*score/100} ${c}" transform="rotate(-90 52 52)"/></svg>`;
 }
-function renderResume(res,title){
+function buildPrompt(j,jd,resume){
+  const head=j?`${j.title} at ${j.company||'(company not listed)'}${j.place?', '+j.place:''}`:'(see description below)';
+  const meta=j?[`Level: ${j.level}`,expText(j)?`Experience stated: ${expText(j)}`:'',`Type of role: ${j.role}`].filter(Boolean).join('. '):'';
+  return `I am applying for the job below. Please help me tailor my resume HONESTLY.
+
+Rules:
+- Use only experience that is already in my resume or that I confirm to you. Never invent skills, tools, titles, dates or numbers.
+- If the job asks for something my resume does not show, ask me whether I have really done it before suggesting I add it.
+- Where a number would help, leave a [X] placeholder for me to fill in with the real figure.
+
+Please give me:
+1. The 8 most important requirements in the job description, and whether my resume shows each one (yes, partly, no).
+2. Rewrites of my 5 weakest bullets, keeping every fact the same.
+3. A tailored 3-line summary for the top of my resume.
+4. The order my Skills section should use for this job.
+5. Questions you need me to answer so I can strengthen the resume truthfully.
+6. Anything on my resume I should shorten or leave out for this job.
+
+JOB: ${head}
+${meta}
+
+JOB DESCRIPTION:
+${jd.trim()||(j&&j.description)||'(paste the full description here)'}
+
+MY RESUME:
+${resume.trim()}`;
+}
+function renderResume(res,title,j,jd){
   const label=res.score>=80?'Strong match':res.score>=60?'Decent. A few edits will help.':'Needs work before you apply.';
   const bars=[['Keyword match',res.kw,50],['Resume sections',res.sec,15],['Results with numbers',res.imp,15],['Action verbs',res.verbs,10],['Job title match',res.tmatch,10]]
     .map(b=>`<div class="bar"><span>${b[0]}</span><i><b style="width:${Math.round(b[1]*100)}%"></b></i><span>${Math.round(b[1]*b[2])}/${b[2]}</span></div>`).join('');
   const tips=[];
-  if(res.miss.length)tips.push(`<b>Missing keywords:</b> ${esc(res.miss.slice(0,6).join(', '))}. If you have really used them, add each to your Skills section and to one achievement bullet that shows how you used it.`);
-  if(res.tmatch<1)tips.push(`Use the job's own title ("${esc(title||'Data Analyst')}") in your headline or summary line.`);
-  if(res.metrics<6)tips.push(`Only ${res.metrics} bullet${res.metrics===1?'':'s'} include numbers. Aim for 6 or more. Pattern: action, what you did, tool used, result. Example: "Automated weekly sales reporting in SQL and Power BI, cutting prep time by 6 hours."`);
+  if(res.miss.length)tips.push(`<b>Keywords the job wants that your resume does not show:</b> ${esc(res.miss.slice(0,6).join(', '))}. Add each one only if you have really used it, in your Skills section and in one bullet that shows how.`);
+  if(res.tmatch<1)tips.push(`Use the job's own title ("${esc(title||'Analyst')}") in your headline or summary line if it is honest for your background.`);
+  if(res.metrics<6)tips.push(`Only ${res.metrics} bullet${res.metrics===1?'':'s'} include numbers. Aim for 6 or more, using real figures.`);
   if(res.verbs<.9&&res.lines)tips.push(`Start bullets with strong verbs such as Built, Automated, Reduced, Validated, Migrated or Delivered. ${res.verbHits} of ${res.lines} bullets do now.`);
   Object.entries(res.sections).forEach(([k,v])=>{if(!v)tips.push(`Add a clearly labeled <b>${k}</b> section. ATS software looks for standard headings.`)});
   if(res.words<350)tips.push(`The resume is short (${res.words} words). Add detail on your strongest projects.`);
   if(res.words>900)tips.push(`The resume is long (${res.words} words). Trim to 1 or 2 pages and keep the most relevant roles.`);
-  tips.push('Use plain formatting: standard headings, no tables, text boxes, columns or images, and save as DOCX or text-based PDF.');
-  const top=res.need.slice(0,3).join(', ');
-  $('#rOut').innerHTML=`<h2>ATS score and fixes</h2>
+  tips.push('Use plain formatting: standard headings, no tables, text boxes, columns or images. Save as DOCX or a text-based PDF.');
+  const weak=res.weak.map(l=>`<li><span class="note">Your line:</span> "${esc(l.length>140?l.slice(0,140)+'...':l)}"<br><span class="note">Try:</span> [Strong verb] + [what you did] + [tool you used] + [result with your real number].</li>`).join('');
+  const prompt=buildPrompt(j,jd,$('#rText').value);
+  $('#rOut').innerHTML=`<h2>Resume match check</h2>
     <div class="ring">${ringSvg(res.score)}<div><div class="num">${res.score}<small style="font-size:16px;font-weight:600"> / 100</small></div><div>${label}</div></div></div>
+    <div class="callout f1none"><b>This is an estimate, not a real ATS score.</b> No outside tool can show the score an employer's system gives. This number only checks keyword overlap with the job and basic resume structure.
+      <details><summary>How it is calculated</summary><small>Keyword match 50 points (skills named in the job that your resume also contains). Standard sections 15. Bullets with numbers 15. Bullets starting with action verbs 10. Job title words found in your resume 10. It cannot judge truthfulness, writing quality or how a human recruiter will read your resume.</small></details></div>
     <div class="bars">${bars}</div>
-    <h3 style="font:600 14px var(--head);margin:14px 0 6px">Keywords found in your resume</h3>
+    <h3 class="sub3">Keywords found in your resume</h3>
     <div class="chips">${res.have.map(s=>`<span class="chip hit">${esc(s)}</span>`).join('')||'<span class="note">None of the target keywords were found.</span>'}</div>
-    <h3 style="font:600 14px var(--head);margin:14px 0 6px">Keywords to add</h3>
+    <h3 class="sub3">Keywords to consider (only if true)</h3>
     <div class="chips">${res.miss.map(s=>`<span class="chip miss">${esc(s)}</span>`).join('')||'<span class="note">You cover every target keyword.</span>'}</div>
-    ${res.extra.length?`<h3 style="font:600 14px var(--head);margin:14px 0 6px">Other words the posting repeats</h3><div class="chips">${res.extra.map(s=>`<span class="chip miss">${esc(s)}</span>`).join('')}</div>`:''}
-    <h3 style="font:600 14px var(--head);margin:14px 0 6px">What to change</h3>
+    ${res.extra.length?`<h3 class="sub3">Other words the posting repeats</h3><div class="chips">${res.extra.map(s=>`<span class="chip miss">${esc(s)}</span>`).join('')}</div>`:''}
+    <h3 class="sub3">What to change</h3>
     <ul class="tips">${tips.map(t=>`<li>${t}</li>`).join('')}</ul>
-    ${top?`<h3 style="font:600 14px var(--head);margin:14px 0 6px">Summary line to adapt</h3><div class="callout">Data analyst skilled in ${esc(top)}, turning raw data into dashboards and reports that [your result, with a number].</div>`:''}
-    <p class="note">Only add skills you can discuss in an interview. This score is an estimate from keyword and structure checks. Real ATS systems score differently.</p>`;
+    ${weak?`<h3 class="sub3">Bullets to strengthen</h3><ul class="tips">${weak}</ul>`:''}
+    <h3 class="sub3">Get tailored, honest edits from Claude</h3>
+    <p class="note">The checks above are rules and cannot read your resume the way a person can. For rewrites tailored to this job description, copy the prompt below and paste it into Claude (claude.ai). It tells Claude not to invent anything and to ask you about gaps.</p>
+    <textarea id="rPrompt" style="min-height:140px" readonly>${esc(prompt)}</textarea>
+    <div class="actions"><button class="btn cobalt" id="rCopy">Copy the prompt</button><a class="btn alt" href="https://claude.ai/new" target="_blank" rel="noopener">Open Claude</a></div>
+    <p class="note" id="rCopyMsg" role="status"></p>`;
 }
+$('#rOut').addEventListener('click',async e=>{
+  if(e.target.id!=='rCopy')return;
+  const ta=$('#rPrompt');
+  try{await navigator.clipboard.writeText(ta.value);$('#rCopyMsg').textContent='Copied. Paste it into a new Claude chat.'}
+  catch(err){ta.select();try{document.execCommand('copy');$('#rCopyMsg').textContent='Copied. Paste it into a new Claude chat.'}catch(e2){$('#rCopyMsg').textContent='Select the text in the box and copy it yourself.'}}
+});
+$('#rText').addEventListener('input',e=>{savedResume=e.target.value;store.set('ao_resume',savedResume)});
+$('#rClear').addEventListener('click',()=>{savedResume='';store.del('ao_resume');$('#rText').value='';$('#rMsg').textContent='Saved resume cleared.';if(selected)renderDetail(selected,false)});
 $('#rFile').addEventListener('change',async e=>{
   const f=e.target.files[0];if(!f)return;
   $('#rMsg').textContent='Reading file...';
@@ -561,19 +848,22 @@ $('#rFile').addEventListener('change',async e=>{
         text+=c.items.map(x=>x.str+(x.hasEOL?'\n':' ')).join('')+'\n';
       }
     }else throw new Error('type');
-    $('#rText').value=text;$('#rMsg').textContent='File read. Press Check my resume.';
+    $('#rText').value=text;savedResume=text;store.set('ao_resume',text);
+    $('#rMsg').textContent='File read. Press Check my resume.';
   }catch(err){$('#rMsg').textContent='Could not read that file. Paste your resume text into the box instead.'}
 });
 $('#rGo').addEventListener('click',()=>{
   const resume=$('#rText').value;
   if(resume.trim().length<150){$('#rMsg').textContent='Add your resume first (upload a file or paste the text).';return}
   const j=DATA.jobs.find(x=>x.id===$('#rJob').value);
-  const jd=($('#rJD').value||'')+' '+(j?j.description:'');
+  const pasted=$('#rJD').value||'';
+  const jd=pasted+' '+(j?j.description:'');
   if(!j&&jd.trim().length<40){$('#rMsg').textContent='Pick a job or paste a job description to compare against.';return}
   $('#rMsg').textContent='';
-  const title=j?j.title:'Data Analyst';
-  renderResume(checkResume(resume,jd,title),title);
+  const title=j?j.title:'Analyst';
+  renderResume(checkResume(resume,jd,title,j?j.role:'Other'),title,j,pasted);
 });
 </script>
+
 </body>
 </html>
