@@ -47,6 +47,7 @@ button{cursor:pointer}
 .choice{display:flex;justify-content:space-between;gap:8px}
 .choice small{opacity:.75}
 .rail select,.rail input[type=search]{width:100%;border:1px solid var(--line);border-radius:8px;padding:8px;background:#fff}
+.check[hidden]{display:none}
 .check{display:flex;gap:8px;align-items:center;margin-top:14px;font-size:14px}
 
 /* list */
@@ -168,9 +169,11 @@ details summary{cursor:pointer;margin-top:6px;font-weight:600}
   <aside class="rail" aria-label="Filters">
     <h2>Posted</h2>
     <div class="seg" id="fPosted">
-      <button data-v="24h">24 hours</button><button data-v="2d">2 days</button>
-      <button data-v="7d">7 days</button><button data-v="30d" aria-pressed="true">1 month</button>
+      <button data-v="all" aria-pressed="true">All 30 days</button><button data-v="24h">Last 24 hours</button>
+      <button data-v="2d">1 to 2 days ago</button><button data-v="7d">2 to 7 days ago</button>
+      <button data-v="30d">7 to 30 days ago</button>
     </div>
+    <p class="note">Each button shows only the jobs posted in that window.</p>
     <h2>Job type</h2>
     <div class="seg" id="fType">
       <button data-v="any" aria-pressed="true">Any</button><button data-v="full_time">Full-time</button>
@@ -179,15 +182,16 @@ details summary{cursor:pointer;margin-top:6px;font-weight:600}
     <h2>Type of analyst</h2>
     <select id="fRole" aria-label="Type of analyst"></select>
     <h2>Experience asked for</h2>
-    <select id="fExp" aria-label="Maximum years of experience">
-      <option value="any">Any</option>
-      <option value="1">Up to 1 year</option>
-      <option value="2">Up to 2 years</option>
-      <option value="3">Up to 3 years</option>
-      <option value="5">Up to 5 years</option>
-      <option value="8" selected>Up to 8 years</option>
+    <select id="fExp" aria-label="Years of experience asked for">
+      <option value="cap8" selected>Up to 8 years (default)</option>
+      <option value="0-1">0 to 1 year</option>
+      <option value="1-3">1 to 3 years</option>
+      <option value="3-5">3 to 5 years</option>
+      <option value="5-8">5 to 8 years</option>
+      <option value="any">Any, even over 8 years</option>
     </select>
-    <p class="note">Read from the years the posting states. Jobs that state no number stay in the list.</p>
+    <label class="check" id="fExpUnstatedWrap" hidden><input type="checkbox" id="fExpUnstated"> Also show jobs that state no years</label>
+    <p class="note" id="expNote"></p>
     <h2>Region (USA)</h2>
     <select id="fRegion" aria-label="Region">
       <option value="any">All of the USA</option>
@@ -369,7 +373,7 @@ const SKILL_BULLETS={
 
 
 let DATA={jobs:[],updated:null};
-const F={posted:'30d',type:'any',role:'any',exp:'8',region:'any',state:'any',f1:'any',sp:'any',hideCit:true,industry:'any',q:'',sort:'new',hide:false,page:1,per:50};
+const F={posted:'all',type:'any',role:'any',exp:'cap8',expUnstated:false,region:'any',state:'any',f1:'any',sp:'any',hideCit:true,industry:'any',q:'',sort:'new',hide:false,page:1,per:50};
 let selected=null;
 let marks=store.get('ao_marks',{});
 let savedResume=store.get('ao_resume','');
@@ -377,8 +381,8 @@ const lastVisit=store.get('ao_last',0);
 
 const F1={accepts:['F-1 welcome or sponsors','good'],caution:['Says no sponsorship','warn'],citizen_gc:['Citizen or green card only: skip','bad'],mixed:['Mixed F-1 signals','warn'],not_mentioned:['F-1 not mentioned','']};
 const spStatus=j=>j.sponsor?j.sponsor.status:'unknown';
-const BANDS=['Last 24 hours','1 to 2 days ago','3 to 7 days ago','8 to 30 days ago'];
-const LIMITS={'24h':24,'2d':48,'7d':168,'30d':720};
+const BANDS=['Last 24 hours','1 to 2 days ago','2 to 7 days ago','7 to 30 days ago'];
+const RANGES={'all':[0,720],'24h':[0,24],'2d':[24,48],'7d':[48,168],'30d':[168,720]};
 const IMPLIED={'Intern':0,'Entry':1,'Mid':3,'Senior':5,'Lead / Manager':8};
 
 /* ---------- helpers ---------- */
@@ -413,14 +417,22 @@ function prep(){
     j.place=j.place||j.location||'';
   });
 }
+function expOk(j){
+  if(F.exp==='any')return true;
+  const stated=j.exp_min!=null;
+  if(F.exp==='cap8')return !(stated&&j.exp_min>8)&&!(!stated&&j._exp!=null&&j._exp>8);
+  const [a,b]=F.exp.split('-').map(Number);
+  if(!stated)return F.expUnstated;
+  return j.exp_min>=a&&j.exp_min<=b;
+}
 function filtered(skip){
   skip=skip||[];
   const q=F.q.trim().toLowerCase();
   return DATA.jobs.filter(j=>{
-    if(j._h>=LIMITS[F.posted])return false;
+    {const r=RANGES[F.posted]||RANGES.all;if(j._h<r[0]||j._h>=r[1])return false}
     if(F.type!=='any'&&j.type!==F.type)return false;
     if(F.role!=='any'&&j.role!==F.role)return false;
-    if(!skip.includes('exp')&&F.exp!=='any'&&j._exp!=null&&j._exp>Number(F.exp))return false;
+    if(!skip.includes('exp')&&!expOk(j))return false;
     if(F.region!=='any'&&j.region!==F.region)return false;
     if(F.state!=='any'&&j.state!==F.state)return false;
     if(!skip.includes('f1')&&F.f1!=='any'&&j.f1!==F.f1)return false;
@@ -440,7 +452,7 @@ function searchLinks(kw,loc,posted,type,exp){
   const li=new URLSearchParams({keywords:kw,location:loc||'United States',f_TPR:t[0]});
   if(type==='full_time')li.set('f_JT','F');
   if(type==='contract')li.set('f_JT','C');
-  const e={'1':'1,2','2':'2,3','3':'2,3','5':'2,3,4','8':'2,3,4'}[exp];
+  const e={'0-1':'1,2','1-3':'2,3','3-5':'3,4','5-8':'4','cap8':'2,3,4'}[exp];
   if(e)li.set('f_E',e);
   const ind=new URLSearchParams({q:kw,fromage:String(t[1])});
   if(loc)ind.set('l',loc);
@@ -450,7 +462,7 @@ function searchLinks(kw,loc,posted,type,exp){
 }
 function updateLinks(){
   const loc=F.state!=='any'?(STATE_NAMES[F.state]||''):'';
-  const l=searchLinks(ROLE_KW[F.role]||'analyst',loc,F.posted,F.type,F.exp);
+  const l=searchLinks(ROLE_KW[F.role]||'analyst',loc,F.posted==='all'?'30d':F.posted,F.type,F.exp);
   $('#lnLI').href=l.li;$('#lnIN').href=l.ind;
 }
 
@@ -505,13 +517,16 @@ function render(){
     :'<p class="note">Not loaded. This part is optional.</p>';
   const hiddenCit=F.hideCit&&F.f1!=='citizen_gc'?filtered(['cit']).length-list.length:0;
   const hiddenExp=F.exp!=='any'?filtered(['exp']).length-list.length:0;
+  {const all=filtered(['exp']);const st=all.filter(j=>j.exp_min!=null).length;
+   $('#expNote').textContent=`${st} of ${all.length} jobs in this view state the years in the posting excerpt. The rest are not guessed.`;
+   $('#fExpUnstatedWrap').hidden=(F.exp==='any'||F.exp==='cap8');}
 
   const total=list.length,pages=Math.max(1,Math.ceil(total/F.per));
   if(F.page>pages)F.page=pages;
   const start=(F.page-1)*F.per,slice=list.slice(start,start+F.per);
   const out=[];
   if(hiddenCit>0)out.push(`<div class="note" style="margin:0 0 8px">${hiddenCit} job${hiddenCit===1?'':'s'} hidden because they need a US citizen or green card. Untick the box on the left to see them.</div>`);
-  if(hiddenExp>0)out.push(`<div class="note" style="margin:0 0 8px">${hiddenExp} job${hiddenExp===1?'':'s'} hidden because they ask for more than ${F.exp} years. Change "Experience asked for" to see them.</div>`);
+  if(hiddenExp>0)out.push(`<div class="note" style="margin:0 0 8px">${hiddenExp} job${hiddenExp===1?'':'s'} hidden by the "Experience asked for" filter. Change it to see them.</div>`);
   out.push(pagerHtml(total,pages));
   let last=-1;
   slice.forEach((j,i)=>{
@@ -599,6 +614,10 @@ function renderDetail(j,open){
       <dt>Industry</dt><dd>${esc(j.industry||'Not listed')}</dd>
       <dt>Hiring activity</dt><dd>${j._level===3?'High. ':j._level===2?'Moderate. ':'Standard. '}${why}</dd>
     </dl>
+    <h3>Posting excerpt</h3>
+    <div class="desc">${esc(j.description||'No excerpt available.')}</div>
+    <p class="note">The job source sends only the first few hundred characters. Years and skills that appear later in the posting are not visible here. Click <b>Open job posting</b> for the full text, then paste it into the box on the Resume check tab for a full comparison.</p>
+    <div class="actions"><a class="btn" href="${esc(j.url)}" target="_blank" rel="noopener">Open job posting</a></div>
     <h3>When to apply</h3>
     <div class="callout">${applyAdvice(j._h)}</div>
     <h3>F-1 students</h3>
@@ -617,8 +636,6 @@ function renderDetail(j,open){
     <a href="${esc(ext.li)}" target="_blank" rel="noopener">Look for this job on LinkedIn</a><br>
     <a href="${esc(ext.ind)}" target="_blank" rel="noopener">Look for this job on Indeed</a><br>
     <a href="https://www.google.com/search?q=${g}" target="_blank" rel="noopener">Company careers page search</a></p>
-    <h3>Posting excerpt</h3>
-    <div class="desc">${esc(j.description||'No excerpt available.')}</div>
     <div class="actions">
       <a class="btn" href="${esc(j.url)}" target="_blank" rel="noopener">Open job posting</a>
       <button class="btn alt" data-mark="applied">${ms==='applied'?'Unmark applied':'Mark applied'}</button>
@@ -640,7 +657,7 @@ function setGroup(sel,key){
 }
 setGroup('#fPosted','posted');setGroup('#fType','type');setGroup('#fF1','f1');setGroup('#fSp','sp');
 function onSelect(sel,key,after){$(sel).addEventListener('change',e=>{F[key]=e.target.value;F.page=1;if(after)after();render()})}
-onSelect('#fRole','role');onSelect('#fExp','exp');onSelect('#fIndustry','industry');onSelect('#fSort','sort');
+onSelect('#fRole','role');onSelect('#fExp','exp');$('#fExpUnstated').addEventListener('change',e=>{F.expUnstated=e.target.checked;F.page=1;render()});onSelect('#fIndustry','industry');onSelect('#fSort','sort');
 onSelect('#fRegion','region',()=>{F.state='any';buildStates()});
 onSelect('#fState','state');
 $('#fPer').addEventListener('change',e=>{F.per=Number(e.target.value);F.page=1;render()});
